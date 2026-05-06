@@ -1,0 +1,146 @@
+---
+title: "ERAP1 Transcriptional Regulation in CD19+ B Cells"
+author: "Aroosha Raja"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    theme: cosmo
+    embed-resources: true
+editor: visual
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 8, fig.height = 6, dpi = 300)
+knitr::opts_knit$set(root.dir = "/Users/araja2/Desktop/CD19_Disc")
+library(ggplot2); library(ggrepel); library(dplyr)
+library(ggsci); library(ReactomePA); library(clusterProfiler)
+library(org.Hs.eg.db); library(enrichplot)
+
+# Load all pre-computed objects from analysis script
+load("/Users/araja2/Desktop/CD19_Disc/CD19_workspace.RData")
+```
+
+## ERAP1 transcriptional regulation in CD19+ B cells
+
+*ERAP1* (P = 0.214) and *ERAP2* (P = 0.389) were not differentially expressed in CD19+ B cells between uveitis patients and controls (Supplementary Figure 1).
+
+### Supplementary Figure 1 — Volcano plot: pan-UV vs HC
+
+```{r supp-volcano}
+volcano_data <- data.frame(
+  gene           = rescombined_anno$SYMBOL,
+  log2FoldChange = replace(rescombined_anno$log2FoldChange,
+                           is.na(rescombined_anno$log2FoldChange), 0),
+  pvalue         = replace(rescombined_anno$pvalue,
+                           is.na(rescombined_anno$pvalue), 1))
+volcano_data$Significance <- with(volcano_data,
+  ifelse(pvalue < 0.05 & log2FoldChange >  0.5, "Upregulated",
+  ifelse(pvalue < 0.05 & log2FoldChange < -0.5, "Downregulated",
+         "Non-significant")))
+
+ggplot(volcano_data, aes(x = log2FoldChange, y = -log10(pvalue),
+                         color = Significance)) +
+  geom_point(alpha = 0.6) +
+  scale_color_manual(values = c(Upregulated = "#D55E00",
+                                Downregulated = "#0072B2",
+                                "Non-significant" = "grey")) +
+  geom_point(data = subset(volcano_data, gene %in% c("ERAP1","ERAP2")),
+             color = "black", size = 3) +
+  geom_text_repel(data = subset(volcano_data, gene %in% c("ERAP1","ERAP2")),
+                  aes(label = gene), size = 5, color = "black",
+                  fontface = "italic") +
+  geom_vline(xintercept = c(-0.5,0.5), linetype = "dashed") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dotted") +
+  labs(title = "Autoimmune Uveitis Patients vs Controls in CD19+ B cells",
+       x = "Log2 Fold Change", y = "-Log10 P-Value") +
+  theme_classic() +
+  theme(text = element_text(size = 14),
+        plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text  = element_text(size = 12))
+```
+
+A co-expression gene network was constructed using the full transcriptome of CD19+ B cells (n = 15,546 genes). *ERAP1* was assigned to a module of 561 co-expressed genes (the *ERAP1 module*), while *ERAP2* was not assigned to any module. Hub genes with high module membership (kME) included *XBP1* (kME = 0.94), *PRDM1* (kME = 0.88), *IRF4*, and *E2F1*, all positively correlated with *ERAP1* (r ≥ 0.6, **Figure 2A**).
+
+## Figure 2A — ERAP1 module: kME vs ERAP1 correlation
+
+```{r fig2A}
+# merge_data: one row per red module gene; columns kME, Correlation, Gene_Name
+# TFs_with_support: ChIP-seq-supported TFs (>= 2 ENCODE experiments in ERAP1 promoter)
+ggplot() +
+  geom_point(data = merge_data, aes(x = kME, y = Correlation),
+             color = "red", alpha = 0.3) +
+  geom_point(data = merge_data[merge_data$Gene_Name %in% TFs_with_support,],
+             aes(x = kME, y = Correlation), size = 4, shape = 16,
+             color = "darkred") +
+  geom_text_repel(data = merge_data[merge_data$Gene_Name %in% TFs_with_support,],
+                  aes(x = kME, y = Correlation, label = Gene_Name),
+                  size = 6, color = "black", fontface = "italic") +
+  geom_point(data = merge_data[merge_data$Gene_Name == "ERAP1",],
+             aes(x = kME, y = Correlation), size = 4, shape = 16,
+             color = "black") +
+  geom_text_repel(data = merge_data[merge_data$Gene_Name == "ERAP1",],
+                  aes(x = kME, y = Correlation, label = Gene_Name),
+                  size = 6, color = "black", fontface = "italic") +
+  xlim(-1,1) + ylim(-1,1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  labs(x = "Module Membership (kME)", y = "Correlation with ERAP1") +
+  theme_classic() +
+  theme(axis.title = element_text(size = 14, face = "bold"),
+        axis.text  = element_text(size = 12))
+```
+
+The *ERAP1* module was enriched for ER stress pathways implicated in MHC-I expression (**Figure 2B**).
+
+## Figure 2B — Reactome pathway enrichment (full ERAP1 module)
+
+```{r fig2B}
+selected_pathways <- c("R-HSA-983169","R-HSA-983170","R-HSA-381070",
+                       "R-HSA-381038","R-HSA-5633008","R-HSA-381119",
+                       "R-HSA-8939236","R-HSA-532668","R-HSA-5362768")
+top_dfred <- reactome_resultsReddf %>%
+  filter(ID %in% selected_pathways) %>%
+  arrange(p.adjust) %>% head(10)
+top_dfred$Description <- gsub(
+  "Class I MHC mediated antigen processing & presentation",
+  "MHC-I antigen processing", top_dfred$Description)
+top_dfred$Description <- gsub(
+  "N-glycan trimming in the ER and Calnexin/Calreticulin cycle",
+  "N-glycan trimming in ER", top_dfred$Description)
+
+col_pal_2B <- colorRampPalette(pal_nejm("default")(8)[c(1,5,7,2)])
+ggplot(top_dfred, aes(x = reorder(Description, Count), y = Count,
+                      fill = p.adjust)) +
+  geom_bar(stat = "identity", width = 0.8, alpha = 0.8,
+           color = "black", linewidth = 0.7) +
+  scale_fill_gradientn(colors = col_pal_2B(8), name = "p-adjusted") +
+  coord_flip() + labs(x = NULL, y = "Gene Count") +
+  theme_classic() +
+  theme(axis.text = element_text(size = 11),
+        axis.title = element_text(face = "bold"))
+```
+
+Enrichment analysis restricted to transcription factors (JASPAR + ENCODE filtered) identified TP53 signalling pathways (**Figure 2C**).
+
+## Figure 2C — Pathway enrichment: TF subset (JASPAR + ENCODE filtered)
+
+```{r fig2C}
+top_df_2C  <- reactome_resultstffiltereddf %>%
+  arrange(desc(GeneCount)) %>% head(10)
+col_pal_2C <- colorRampPalette(pal_nejm("default")(8)[c(1,3,7,2)])
+
+ggplot(top_df_2C, aes(x = reorder(Description, GeneCount), y = GeneCount,
+                      fill = p.adjust)) +
+  geom_bar(stat = "identity", width = 0.8, alpha = 0.8,
+           color = "black", linewidth = 0.7) +
+  scale_fill_gradientn(colors = col_pal_2C(8), name = "p-adjusted") +
+  coord_flip() + labs(x = NULL, y = "Gene Count") +
+  theme_classic() +
+  theme(axis.text = element_text(size = 11),
+        axis.title = element_text(face = "bold"))
+```
